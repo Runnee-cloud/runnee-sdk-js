@@ -1,0 +1,32 @@
+name: JavaScript SDK
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci && npm run build && npm test && npm run typecheck && npm run format:check
+      - run: npx tsc --noEmit --strict --target es2022 --module nodenext tests/types.mts
+      - run: npm pack
+      - name: Install packed package into a clean consumer
+        run: npm install --prefix "$RUNNER_TEMP/runnee-consumer" "$PWD/$(node -p 'require("./package.json").name.replace("@","").replace("/","-")+"-"+require("./package.json").version+".tgz')" --ignore-scripts --offline --no-audit --no-fund
+      - name: Check installed ESM and CommonJS exports
+        working-directory: ${{ runner.temp }}/runnee-consumer
+        run: |
+          node --input-type=module -e "import { Runnee } from '@runnee/sdk'; if (typeof Runnee !== 'function') throw Error('Invalid ESM export')"
+          node -e "if(typeof require('@runnee/sdk').Runnee !== 'function') throw Error('Invalid CJS export')"
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install && bun run build && bun test tests
